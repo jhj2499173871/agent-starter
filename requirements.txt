@@ -1,0 +1,22 @@
+# D1 装这些就够了；后面按需再加
+openai>=1.40
+python-dotenv>=1.0
+pydantic>=2.7
+
+# D5 起（文档加载与切分）
+pypdf>=4.2
+python-docx>=1.1
+
+# D5 起（向量库）
+chromadb>=0.5
+
+# D6 起（混合检索）
+rank-bm25>=0.2.2
+
+# 随时可用（单测）
+pytest>=8.2
+
+# D13 起（服务化）—— 需要时再取消注释
+# fastapi>=0.111
+# uvicorn[standard]>=0.30
+# python-multipart>=0.0.9

@@ -1,0 +1,21 @@
+# 密钥与本地配置
+.env
+*.key
+
+# 日志与缓存
+logs/
+*.log
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# 向量库与数据大文件（按需保留）
+.chroma/
+*.faiss
+*.sqlite3
+
+# 系统文件
+.DS_Store
+Thumbs.db
