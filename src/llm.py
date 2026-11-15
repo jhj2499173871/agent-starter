@@ -41,11 +41,9 @@ class Reply:
 
     @property
     def cost_yuan(self) -> float:
-        price = config.PRICING.get(self.model, {"in": 0.0, "out": 0.0})
-        return (
-            self.prompt_tokens / 1_000_000 * price.get("in", 0.0)
-            + self.completion_tokens / 1_000_000 * price.get("out", 0.0)
-        )
+        pin, pout = config.price_of(self.model)
+        return (self.prompt_tokens / 1_000_000 * pin
+                + self.completion_tokens / 1_000_000 * pout)
 
 
 @dataclass
@@ -124,10 +122,18 @@ class LLM:
             # 实测：DeepSeek 忽略 max_completion_tokens，只认 max_tokens
             "max_tokens": max_tokens,
             "stream": stream,
+            # 两个平台都默认开启「深度思考」，思考 token 也计费且会挤占 max_tokens，
+            # 所以默认关闭（见 config.MODELS 里的 thinking 字段）。
+            "extra_body": {
+                "thinking": {"type": "enabled" if self.cfg.get("thinking") else "disabled"}
+            },
         }
         # TODO(D3–D4 作业): 把 tools 透传进去，并处理 tool_calls 的返回
         if tools:
             kwargs["tools"] = tools
+        if stream:
+            # 让服务端在最后一个数据包里带上 usage，否则流式拿不到 token 数
+            kwargs["stream_options"] = {"include_usage": True}
 
         return self._call_with_retry(kwargs, stream=stream)
 
@@ -175,8 +181,7 @@ class LLM:
     def _stream_once(self, kwargs: dict, started: float) -> Reply:
         """流式：边收边打印，同时统计首 token 延迟。
 
-        TODO(作业 02): 流式响应里 usage 可能为空，需要补一次非流式统计，
-        或改用 stream_options={"include_usage": True}（若平台支持）。
+        usage 靠 chat() 里传的 stream_options={"include_usage": True} 拿回来。
         """
         chunks: list[str] = []
         first_at: float | None = None
@@ -184,9 +189,9 @@ class LLM:
 
         stream = self.client.chat.completions.create(**kwargs)
         for chunk in stream:
-            if first_at is None:
-                first_at = time.perf_counter() - started
             if chunk.choices and chunk.choices[0].delta.content:
+                if first_at is None:      # 只统计第一个「有内容」的包
+                    first_at = time.perf_counter() - started
                 piece = chunk.choices[0].delta.content
                 chunks.append(piece)
                 print(piece, end="", flush=True)
@@ -234,6 +239,10 @@ def _setup_logging() -> None:
         format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
         datefmt="%H:%M:%S",
     )
+    # httpx 每条请求都会打 INFO 日志，太吵，压到 WARNING
+    # 注意：openai 3.x 用的是改名后的 httpx2，两个都要压
+    for noisy in ("httpx", "httpx2"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def _selftest() -> int:
