@@ -1,10 +1,8 @@
 """D2: 一个能换后端、会重试的客户端。
-
 今天的核心就三件事：
-  1. 多后端切换（BACKENDS 表）
-  2. 指数退避重试（只重试限流/超时/连不上）
-  3. 结构化日志（模型、耗时、token、尝试次数）
-
+1. 多后端切换（BACKENDS 表）
+2. 指数退避重试（只重试限流/超时/连不上）
+3. 结构化日志（模型、耗时、token、尝试次数）
 流式输出和成本统计不在这里，等 D10 再讲。
 """
 import logging, os, time
@@ -13,6 +11,8 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 from openai import (OpenAI, RateLimitError, APITimeoutError,
                     APIConnectionError, APIStatusError)
+import sys
+sys.stdout.reconfigure(encoding="utf-8")
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO,
@@ -22,7 +22,6 @@ BACKENDS = {
     "mimo": ("https://api.xiaomimimo.com/v1",
              "mimo-v2.6-flash",
              "MIMO_API_KEY"),
-
     "deepseek": ("https://api.deepseek.com",
                  "deepseek-flash",
                  "DEEPSEEK_API_KEY"),
@@ -38,7 +37,7 @@ class Reply:
     text: str
     prompt_tokens: int
     completion_tokens: int
-    latency: float
+    latency: float                      # 耗时，单位秒（s）
     attempts: int
 
 
@@ -54,15 +53,17 @@ class LLM:
         )
 
     def chat(self, prompt, system=None):
-        messages = ([{"role": "system", "content": system}] if system else [])
+        messages = [{"role": "system", "content": system}] if system else []
         messages.append({"role": "user", "content": prompt})
+        return self.chat_messages(messages)        # ← 转调
 
+    def chat_messages(self, messages):
         for attempt in range(1, MAX_RETRY + 1):
             t0 = time.perf_counter()
             try:
                 r = self.client.chat.completions.create(
                     model=self.model,
-                    messages=messages,
+                    messages=messages,             # ← 原样透传
                     max_tokens=800,
                     temperature=0.3,
                 )
@@ -74,18 +75,13 @@ class LLM:
                              self.model, reply.latency,
                              u.prompt_tokens, u.completion_tokens, attempt)
                 return reply
-
             except RETRYABLE as e:
                 wait = 1.5 ** attempt
-                logging.warning("第%d次失败(%s)，%.1fs 后重试",
-                                attempt, type(e).__name__, wait)
+                logging.warning("第%d次失败(%s)，%.1fs 后重试", attempt, type(e).__name__, wait)
                 time.sleep(wait)
-
             except APIStatusError as e:
-                # 4xx 是参数或鉴权问题，重试没有意义
                 logging.error("请求被拒绝：%s %s", e.status_code, e.message)
                 raise
-
         raise RuntimeError("重试耗尽")
 
 
