@@ -13,6 +13,9 @@ chromadb>=0.5
 # D6 起（混合检索）
 rank-bm25>=0.2.2
 
+# D6 起（精排 cross-encoder）—— 会连带安装 torch，约 2GB，装得慢是正常的
+sentence-transformers>=3.0
+
 # 随时可用（单测）
 pytest>=8.2
 
